@@ -4,28 +4,50 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/user"
+	"runtime"
 	"strconv"
 	"syscall"
 )
 
+func usage() {
+	fmt.Println("Usage:", os.Args[0], "<dir>")
+}
+
 func main() {
+	if runtime.GOOS != "linux" {
+		fmt.Fprintln(os.Stderr, "This program is only supported on Linux.")
+		os.Exit(1)
+	}
+
 	progArgs := os.Args
-	fmt.Println(progArgs)
+	if len(progArgs) < 2 {
+		usage()
+		os.Exit(1)
+	}
 
 	dirArg := progArgs[1]
 	fileList, err := ioutil.ReadDir(dirArg)
-	if (err != nil) {
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}
 
 	for _, f := range fileList {
 		//println(f.Name(), FSZtoString(f.Size()), FModetoString(f.Mode()))
 
-		fmt.Printf("%s%s %d %d %5s %s\n",
+		// The following two functions only work on Linux
+		pwdUser := strconv.FormatUint(uint64(f.Sys().(*syscall.Stat_t).Uid), 10)
+		pwdGroup := strconv.FormatUint(uint64(f.Sys().(*syscall.Stat_t).Gid), 10)
+		pwdULookup, err := user.LookupId(pwdUser)
+		if err == nil { pwdUser = pwdULookup.Username }
+		pwdGLookup, err := user.LookupGroupId(pwdGroup)
+		if err == nil { pwdGroup = pwdGLookup.Name }
+
+		fmt.Printf("%s%s %s %s %5s %s\n",
 			FModetoString(f.Mode()),
 			f.Mode().Perm().String()[1:],
-			f.Sys().(*syscall.Stat_t).Uid, // Expect this and the following line
-			f.Sys().(*syscall.Stat_t).Gid, // to break on anything other than Linux
+			pwdUser,
+			pwdGroup,
 			FSZtoString(f.Size()),
 			f.Name(),
 		)
@@ -46,6 +68,7 @@ func FModetoString(mode os.FileMode) string {
 	switch {
 	case mode.IsRegular(): return "-"
 	case mode.IsDir(): return "d"
+	case mode & os.ModeSymlink != 0: return "l"
 	default: return "?"
 	// TODO: add lines for links and stuff
 	}
